@@ -1,33 +1,27 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
-import { useRouter } from 'vue-router';
 import { useEventsStore } from '../stores/eventsStore';
 import { useCityStore } from '../stores/cityStore';
-import { useAuthStore } from '../stores/authStore';
-import { useImageUpload } from '../composables/useImageUpload';
-import AuthModal from '../components/auth/AuthModal.vue';
+import { useUserStore } from '../stores/userStore';
 import {
   Sparkles,
   CheckCircle,
-  Upload,
   AlertCircle,
-  User,
   ArrowRight,
   ArrowLeft,
-  Image as ImageIcon
+  Link as LinkIcon
 } from 'lucide-vue-next';
 
-const router = useRouter();
 const eventsStore = useEventsStore();
 const cityStore = useCityStore();
-const authStore = useAuthStore();
-const { isUploading, uploadProgress, uploadError, uploadEventPoster } = useImageUpload();
+const userStore = useUserStore();
 
 const currentStep = ref(1);
 const isSubmitting = ref(false);
 const isSuccess = ref(false);
 const submitError = ref<string | null>(null);
-const isAuthModalOpen = ref(false);
+
+const DEFAULT_IMAGE_URL = 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?q=80&w=1200&auto=format&fit=crop';
 
 // Form model
 const form = ref({
@@ -49,9 +43,6 @@ const form = ref({
   tags: 'Chamamé, En vivo, Costanera'
 });
 
-const selectedFile = ref<File | null>(null);
-const previewImageURL = ref<string | null>(null);
-
 onMounted(async () => {
   await Promise.all([
     eventsStore.fetchCategories(),
@@ -64,48 +55,18 @@ onMounted(async () => {
   if (cityStore.cities.length > 0 && !form.value.cityId) {
     form.value.cityId = cityStore.cities[0].id;
   }
-  if (authStore.user?.displayName) {
-    form.value.organizerName = authStore.user.displayName;
+  const profileName = userStore.user?.displayName;
+  if (profileName && profileName !== 'Visitante Cultural') {
+    form.value.organizerName = profileName;
   }
 });
 
-function handleFileChange(e: Event) {
-  const target = e.target as HTMLInputElement;
-  if (target.files && target.files[0]) {
-    const file = target.files[0];
-    selectedFile.value = file;
-    previewImageURL.value = URL.createObjectURL(file);
-  }
-}
-
-async function handleUploadSelectedImage(): Promise<string> {
-  if (selectedFile.value) {
-    const uploadedURL = await uploadEventPoster(selectedFile.value);
-    form.value.imageURL = uploadedURL;
-    return uploadedURL;
-  }
-  return form.value.imageURL || 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?q=80&w=1200&auto=format&fit=crop';
-}
-
 async function handleSubmit() {
-  if (!authStore.isAuthenticated) {
-    isAuthModalOpen.value = true;
-    return;
-  }
-
   isSubmitting.value = true;
   submitError.value = null;
 
   try {
-    // 1. Upload image to Firebase Storage if a local file was picked
-    let finalImageURL = form.value.imageURL;
-    if (selectedFile.value) {
-      finalImageURL = await handleUploadSelectedImage();
-    }
-
-    if (!finalImageURL) {
-      finalImageURL = 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?q=80&w=1200&auto=format&fit=crop';
-    }
+    const finalImageURL = form.value.imageURL.trim() || DEFAULT_IMAGE_URL;
 
     const selectedCategory = eventsStore.categories.find(c => c.id === form.value.categoryId);
     const selectedCity = cityStore.cities.find(c => c.id === form.value.cityId);
@@ -122,8 +83,8 @@ async function handleSubmit() {
       categoryId: form.value.categoryId || 'musica',
       categoryName: selectedCategory?.name || 'Música en Vivo',
       categoryEmoji: selectedCategory?.emoji || '🎵',
-      organizerId: authStore.user?.uid || 'org-community',
-      organizerName: form.value.organizerName.trim() || authStore.user?.displayName || 'Organizador Independiente',
+      organizerId: userStore.visitorId,
+      organizerName: form.value.organizerName.trim() || userStore.user?.displayName || 'Organizador Independiente',
       organizerType: form.value.organizerType,
       cityId: form.value.cityId,
       cityName: selectedCity?.name || 'Corrientes',
@@ -139,14 +100,19 @@ async function handleSubmit() {
       ticketUrl: form.value.ticketUrl.trim() || undefined,
       imageURL: finalImageURL,
       tags: form.value.tags.split(',').map(t => t.trim()).filter(Boolean),
-      verificationStatus: authStore.isAdmin ? 'verified' as const : 'pending' as const,
-      publicationStatus: authStore.isAdmin ? 'published' as const : 'pending_review' as const,
+      verificationStatus: 'pending' as const,
+      publicationStatus: 'pending_review' as const,
       sourceType: 'community' as const,
       attendeesCount: 0,
       savesCount: 0,
     };
 
-    await eventsStore.submitEvent(newEventData, authStore.user?.uid);
+    // Community proposals always enter the moderation queue first. If the curation
+    // mode is unlocked, approve immediately (same flow as the moderation panel).
+    const created = await eventsStore.submitEvent(newEventData, userStore.visitorId);
+    if (userStore.isCurator && created?.id) {
+      await eventsStore.approveEvent(created.id, userStore.visitorId);
+    }
     isSuccess.value = true;
   } catch (err: any) {
     console.error('Error submitting event to Firestore:', err);
@@ -169,7 +135,7 @@ async function handleSubmit() {
         Publicar una actividad o evento
       </h1>
       <p class="text-sm sm:text-base text-gray-400 mt-2">
-        Llegá a miles de personas que buscan qué hacer hoy en Corrientes y Chaco. Tu propuesta se almacena en Cloud Firestore y las imágenes en Firebase Storage.
+        Llegá a miles de personas que buscan qué hacer hoy en Corrientes y Chaco. Tu propuesta se almacena en Cloud Firestore y pasa por curaduría antes de publicarse.
       </p>
     </div>
 
@@ -198,32 +164,13 @@ async function handleSubmit() {
       </div>
     </div>
 
-    <!-- Auth alert if unauthenticated -->
-    <div
-      v-if="!authStore.isAuthenticated"
-      class="mb-6 p-4 rounded-2xl bg-white/5 border border-[#FFC69D]/30 flex items-center justify-between gap-4"
-    >
-      <div class="flex items-center gap-3">
-        <User class="w-5 h-5 text-[#FFC69D] shrink-0" />
-        <p class="text-xs sm:text-sm text-gray-300">
-          Debés iniciar sesión para publicar eventos y asociarlos a tu perfil.
-        </p>
-      </div>
-      <button
-        @click="isAuthModalOpen = true"
-        class="px-4 py-2 rounded-xl bg-[#FFC69D] text-[#172B46] font-bold text-xs shrink-0 hover:bg-[#FFDCC4] transition-all"
-      >
-        Iniciar sesión
-      </button>
-    </div>
-
     <!-- Error message if submit failed -->
     <div
-      v-if="submitError || uploadError"
+      v-if="submitError"
       class="mb-6 p-4 rounded-2xl bg-red-500/15 border border-red-500/30 flex items-center gap-3 text-xs sm:text-sm text-red-200"
     >
       <AlertCircle class="w-5 h-5 text-red-400 shrink-0" />
-      <span>{{ submitError || uploadError }}</span>
+      <span>{{ submitError }}</span>
     </div>
 
     <!-- Success State -->
@@ -232,10 +179,10 @@ async function handleSubmit() {
         <CheckCircle class="w-8 h-8" />
       </div>
       <h2 class="text-2xl font-bold text-white font-['Plus_Jakarta_Sans']">
-        {{ authStore.isAdmin ? '¡Evento publicado en vivo!' : '¡Evento enviado a revisión!' }}
+        {{ userStore.isCurator ? '¡Evento aprobado y publicado en vivo!' : '¡Evento enviado a revisión!' }}
       </h2>
       <p class="text-sm text-gray-300 max-w-md mx-auto leading-relaxed">
-        {{ authStore.isAdmin ? 'Como administrador, el evento fue aprobado y sincronizado inmediatamente en Cloud Firestore.' : 'Tu publicación quedó guardada con estado pendiente de revisión en Firestore. El equipo local de curaduría verificará los detalles en breve.' }}
+        {{ userStore.isCurator ? 'Como curador, el evento fue aprobado y sincronizado inmediatamente en Cloud Firestore.' : 'Tu publicación quedó guardada con estado pendiente de revisión en Firestore. El equipo local de curaduría verificará los detalles en breve.' }}
       </p>
       <div class="pt-4 flex items-center justify-center gap-3">
         <router-link
@@ -245,7 +192,7 @@ async function handleSubmit() {
           Ir a Explorar
         </router-link>
         <button
-          @click="isSuccess = false; currentStep = 1; form.title = ''; selectedFile = null; previewImageURL = null;"
+          @click="isSuccess = false; currentStep = 1; form.title = ''; form.imageURL = '';"
           class="px-6 py-3 rounded-xl bg-white/10 text-white text-sm hover:bg-white/15 transition-all"
         >
           Cargar otro evento
@@ -519,53 +466,39 @@ async function handleSubmit() {
           </div>
         </div>
 
-        <!-- Real Firebase Storage Upload -->
+        <!-- Event poster: image URL (Firebase Storage was removed; only Hosting + Firestore) -->
         <div>
-          <label class="block text-xs font-semibold text-gray-300 mb-2">Afiche o foto de portada (Firebase Storage)</label>
+          <label class="block text-xs font-semibold text-gray-300 mb-2">Afiche o foto de portada (URL de la imagen)</label>
 
           <div class="flex flex-col sm:flex-row gap-4 items-center">
-            <!-- File input drop area -->
-            <label
-              class="w-full flex-1 flex flex-col items-center justify-center p-6 rounded-2xl border-2 border-dashed border-white/20 hover:border-[#FFC69D]/60 bg-white/5 cursor-pointer transition-all group"
-            >
-              <Upload class="w-8 h-8 text-gray-400 group-hover:text-[#FFC69D] mb-2 transition-colors" />
-              <span class="text-xs sm:text-sm font-semibold text-white">Seleccionar imagen del dispositivo</span>
-              <span class="text-[11px] text-gray-400 mt-0.5">JPG, PNG o WebP (máx. 5 MB)</span>
-              <input
-                type="file"
-                accept="image/png, image/jpeg, image/webp"
-                @change="handleFileChange"
-                class="hidden"
-              />
-            </label>
+            <div class="w-full flex-1">
+              <div class="flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl bg-white/5 border border-white/10 focus-within:border-[#FFC69D]/50 focus-within:bg-white/10 transition-colors">
+                <LinkIcon class="w-4 h-4 text-gray-400 shrink-0" />
+                <input
+                  v-model="form.imageURL"
+                  type="url"
+                  placeholder="https://ejemplo.com/mi-afiche.jpg"
+                  class="w-full bg-transparent text-sm text-white placeholder:text-gray-400 focus:outline-none"
+                />
+              </div>
+              <p class="text-[11px] text-gray-400 mt-1.5">
+                Pegá el enlace web de tu imagen (Drive, redes sociales, CDN). Si lo dejás vacío, usamos una imagen genérica según la categoría.
+              </p>
+            </div>
 
             <!-- Preview -->
             <div
-              v-if="previewImageURL || form.imageURL"
+              v-if="form.imageURL"
               class="w-32 h-32 rounded-2xl overflow-hidden bg-black/40 border border-white/15 relative shrink-0"
             >
               <img
-                :src="previewImageURL || form.imageURL"
-                alt="Vista previa"
+                :src="form.imageURL"
+                alt="Vista previa del afiche"
                 class="w-full h-full object-cover"
               />
               <span class="absolute bottom-1 right-1 px-1.5 py-0.5 rounded text-[10px] bg-black/70 text-[#91E3C7]">
                 Vista previa
               </span>
-            </div>
-          </div>
-
-          <!-- Upload Progress indicator -->
-          <div v-if="isUploading" class="mt-3 space-y-1">
-            <div class="flex justify-between text-xs text-gray-400">
-              <span>Subiendo a Firebase Storage...</span>
-              <span>{{ uploadProgress }}%</span>
-            </div>
-            <div class="w-full h-1.5 rounded-full bg-white/10 overflow-hidden">
-              <div
-                class="h-full bg-[#91E3C7] transition-all duration-200"
-                :style="{ width: `${uploadProgress}%` }"
-              ></div>
             </div>
           </div>
         </div>
@@ -593,21 +526,15 @@ async function handleSubmit() {
 
           <button
             type="button"
-            :disabled="isSubmitting || isUploading"
+            :disabled="isSubmitting"
             @click="handleSubmit"
             class="px-8 py-3 rounded-xl bg-[#FFC69D] text-[#172B46] font-bold text-sm shadow-[0_0_20px_rgba(255,198,157,0.35)] hover:bg-[#FFDCC4] transition-all active:scale-[0.99] disabled:opacity-50 font-['Plus_Jakarta_Sans']"
           >
-            <span v-if="isSubmitting || isUploading">Guardando en Firestore...</span>
-            <span v-else>{{ authStore.isAdmin ? 'Aprobar y Publicar en Vivo' : 'Enviar propuesta a revisión' }}</span>
+            <span v-if="isSubmitting">Guardando en Firestore...</span>
+            <span v-else>{{ userStore.isCurator ? 'Aprobar y Publicar en Vivo' : 'Enviar propuesta a revisión' }}</span>
           </button>
         </div>
       </div>
     </form>
-
-    <!-- Auth Modal -->
-    <AuthModal
-      v-if="isAuthModalOpen"
-      @close="isAuthModalOpen = false"
-    />
   </div>
 </template>

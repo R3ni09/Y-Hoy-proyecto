@@ -1,8 +1,17 @@
 /**
- * Manual development seed script for ¿Y hoy?
+ * Seed script for ¿Y hoy? — Cloud Firestore via the Admin SDK.
  *
- * Usage:
- *   npx tsx scripts/seed.ts
+ * Why Admin SDK? The web client no longer has Firebase Auth (Spark plan uses
+ * only Hosting + Firestore), so the client SDK cannot pass the security rules
+ * for writes. The Admin SDK bypasses rules and is the supported way to seed.
+ *
+ * Setup:
+ *   1. Firebase console > Project settings > Service accounts
+ *      > "Generate new private key" and save it as ./serviceAccount.json
+ *   2. Add to your .env:
+ *        GOOGLE_APPLICATION_CREDENTIALS=./serviceAccount.json
+ *   3. Run:
+ *        npx tsx scripts/seed.ts
  *
  * Populates Cloud Firestore collections:
  *   - cities
@@ -10,41 +19,33 @@
  *   - organizers
  *   - events
  *
- * Safe & Idempotent: Uses setDoc with merge: true.
- * Never runs automatically in client application.
+ * Safe & idempotent: uses setDoc with merge: true.
  */
 
-import { initializeApp } from 'firebase/app';
-import { getFirestore, doc, setDoc, Timestamp } from 'firebase/firestore';
+import { initializeApp, applicationDefault } from 'firebase-admin/app';
+import { getFirestore, Timestamp } from 'firebase-admin/firestore';
 import * as dotenv from 'dotenv';
 import { CITIES, CATEGORIES, ORGANIZERS, INITIAL_EVENTS } from '../src/data/seedData';
 
 dotenv.config();
 
-const firebaseConfig = {
-  apiKey: process.env.VITE_FIREBASE_API_KEY,
-  authDomain: process.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: process.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.VITE_FIREBASE_APP_ID,
-};
+const projectId = process.env.FIRESTORE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID || 'y-hoy-efe60';
 
-if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
-  console.error('\n❌ ERROR: Firebase credentials missing in environment.');
-  console.error('Please configure your .env file with:');
-  console.error('  VITE_FIREBASE_API_KEY=...');
-  console.error('  VITE_FIREBASE_AUTH_DOMAIN=...');
-  console.error('  VITE_FIREBASE_PROJECT_ID=...');
-  console.error('  VITE_FIREBASE_STORAGE_BUCKET=...');
-  console.error('  VITE_FIREBASE_MESSAGING_SENDER_ID=...');
-  console.error('  VITE_FIREBASE_APP_ID=...\n');
+if (!process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+  console.error('\n❌ ERROR: Missing GOOGLE_APPLICATION_CREDENTIALS.');
+  console.error('Generate a service account key from the Firebase console');
+  console.error('(Project settings > Service accounts > Generate new private key),');
+  console.error('save it as ./serviceAccount.json and add to your .env:');
+  console.error('  GOOGLE_APPLICATION_CREDENTIALS=./serviceAccount.json\n');
   process.exit(1);
 }
 
-console.log(`\n🌱 Starting seed for project: ${firebaseConfig.projectId} ...`);
+console.log(`\n🌱 Starting seed for Firestore project: ${projectId} ...`);
 
-const app = initializeApp(firebaseConfig);
+const app = initializeApp({
+  credential: applicationDefault(),
+  projectId,
+});
 const db = getFirestore(app);
 
 async function seed() {
@@ -52,7 +53,7 @@ async function seed() {
     // 1. Seed Cities
     console.log(`\n📍 Seeding ${CITIES.length} cities...`);
     for (const city of CITIES) {
-      await setDoc(doc(db, 'cities', city.id), {
+      await db.collection('cities').doc(city.id).set({
         ...city,
         updatedAt: Timestamp.now(),
       }, { merge: true });
@@ -62,7 +63,7 @@ async function seed() {
     // 2. Seed Categories
     console.log(`\n🏷️ Seeding ${CATEGORIES.length} categories...`);
     for (const cat of CATEGORIES) {
-      await setDoc(doc(db, 'categories', cat.id), {
+      await db.collection('categories').doc(cat.id).set({
         ...cat,
         isActive: true,
         updatedAt: Timestamp.now(),
@@ -73,7 +74,7 @@ async function seed() {
     // 3. Seed Organizers
     console.log(`\n🏛️ Seeding ${ORGANIZERS.length} organizers...`);
     for (const org of ORGANIZERS) {
-      await setDoc(doc(db, 'organizers', org.id), {
+      await db.collection('organizers').doc(org.id).set({
         ...org,
         updatedAt: Timestamp.now(),
       }, { merge: true });
@@ -103,9 +104,10 @@ async function seed() {
       }
 
       const isoStart = eventDate.toISOString();
+      const { id: eventId, ...eventPayload } = evt;
 
-      await setDoc(doc(db, 'events', evt.id), {
-        ...evt,
+      await db.collection('events').doc(eventId).set({
+        ...eventPayload,
         startAt: isoStart,
         publicationStatus: 'published',
         verificationStatus: 'verified',

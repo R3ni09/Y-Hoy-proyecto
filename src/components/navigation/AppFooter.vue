@@ -57,7 +57,7 @@ import { isFirebaseConfigured } from '../../services/firebase/config';
         <div class="flex items-center gap-2">
           <span class="w-2 h-2 rounded-full" :class="isFirebaseConfigured ? 'bg-[#91E3C7]' : 'bg-amber-400 animate-pulse'"></span>
           <span>
-            {{ isFirebaseConfigured ? 'Firebase Firestore & Auth configurados' : 'Firebase pendiente de credenciales (.env)' }}
+            {{ isFirebaseConfigured ? 'Firebase Firestore configurado' : 'Firebase pendiente de credenciales (.env)' }}
           </span>
         </div>
       </div>

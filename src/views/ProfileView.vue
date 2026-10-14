@@ -1,25 +1,22 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
-import { useAuthStore } from '../stores/authStore';
+import { useUserStore } from '../stores/userStore';
 import { useCityStore } from '../stores/cityStore';
 import { useEventsStore } from '../stores/eventsStore';
-import AuthModal from '../components/auth/AuthModal.vue';
 import {
-  User,
   MapPin,
   CheckCircle,
   Sparkles,
   AlertCircle
 } from 'lucide-vue-next';
 
-const authStore = useAuthStore();
+const userStore = useUserStore();
 const cityStore = useCityStore();
 const eventsStore = useEventsStore();
 
 const isSaving = ref(false);
 const savedFeedback = ref(false);
 const errorMessage = ref<string | null>(null);
-const isAuthModalOpen = ref(false);
 
 const editableDisplayName = ref('');
 const editableCityId = ref('corrientes');
@@ -31,10 +28,10 @@ onMounted(async () => {
     eventsStore.fetchCategories()
   ]);
 
-  if (authStore.user) {
-    editableDisplayName.value = authStore.user.displayName || '';
-    editableCityId.value = authStore.user.preferredCityId || 'corrientes';
-    editableCategories.value = [...(authStore.user.preferredCategoryIds || ['musica'])];
+  if (userStore.user) {
+    editableDisplayName.value = userStore.user.displayName || '';
+    editableCityId.value = userStore.user.preferredCityId || 'corrientes';
+    editableCategories.value = [...(userStore.user.preferredCategoryIds || ['musica'])];
   }
 });
 
@@ -48,13 +45,13 @@ function toggleCategory(categoryId: string) {
 }
 
 async function handleSavePreferences() {
-  if (!authStore.user?.uid) return;
+  if (!userStore.user) return;
   isSaving.value = true;
   errorMessage.value = null;
 
   try {
-    await authStore.updateUserProfile({
-      displayName: editableDisplayName.value.trim() || authStore.user.displayName,
+    await userStore.updateUserProfile({
+      displayName: editableDisplayName.value.trim() || userStore.user.displayName,
       preferredCityId: editableCityId.value,
       preferredCategoryIds: editableCategories.value,
     });
@@ -75,7 +72,7 @@ async function handleSavePreferences() {
         Mi Perfil & Preferencias
       </h1>
       <p class="text-xs sm:text-sm text-gray-400 mt-1">
-        Personalizá tu experiencia cultural y administrá tus datos guardados en Cloud Firestore.
+        Personalizá tu experiencia cultural. Tus preferencias se guardan en Cloud Firestore, sin necesidad de crear una cuenta.
       </p>
     </div>
 
@@ -88,30 +85,30 @@ async function handleSavePreferences() {
       <span>{{ errorMessage }}</span>
     </div>
 
-    <div v-if="authStore.isAuthenticated && authStore.user" class="space-y-6">
+    <!-- Loading skeleton while the visitor profile syncs -->
+    <div v-if="userStore.isLoading" class="space-y-4 animate-pulse">
+      <div class="h-28 rounded-3xl bg-white/5"></div>
+      <div class="h-72 rounded-3xl bg-white/5"></div>
+    </div>
+
+    <div v-else-if="userStore.user" class="space-y-6">
       <!-- Profile Info Card -->
       <div class="p-6 rounded-3xl bg-[#181B23] border border-white/10 flex flex-col sm:flex-row items-center sm:items-start gap-4">
-        <img
-          v-if="authStore.user.photoURL"
-          :src="authStore.user.photoURL"
-          :alt="authStore.user.displayName"
-          class="w-16 h-16 rounded-full object-cover border-2 border-[#FFC69D]"
-        />
-        <div v-else class="w-16 h-16 rounded-full bg-[#172B46] border border-white/20 flex items-center justify-center text-xl font-bold text-white">
-          {{ authStore.user.displayName.charAt(0) }}
+        <div class="w-16 h-16 rounded-full bg-[#172B46] border border-white/20 flex items-center justify-center text-xl font-bold text-white">
+          {{ userStore.user.displayName.charAt(0) }}
         </div>
 
         <div class="flex-1 text-center sm:text-left">
           <div class="flex flex-col sm:flex-row sm:items-center gap-2">
-            <h2 class="text-lg font-bold text-white">{{ authStore.user.displayName }}</h2>
+            <h2 class="text-lg font-bold text-white">{{ userStore.user.displayName }}</h2>
             <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#FFC69D]/20 text-[#FFC69D] uppercase self-center sm:self-auto">
-              {{ authStore.userRole }}
+              Visitante
             </span>
           </div>
-          <p class="text-xs text-gray-400 mt-0.5">{{ authStore.user.email }}</p>
+          <p class="text-xs text-gray-400 mt-0.5">Perfil local, sin cuentas ni contraseñas</p>
           <p class="text-[11px] text-[#91E3C7] mt-1 flex items-center justify-center sm:justify-start gap-1">
             <Sparkles class="w-3.5 h-3.5" />
-            <span>Perfil sincronizado en Cloud Firestore</span>
+            <span>Preferencias sincronizadas en Cloud Firestore</span>
           </p>
         </div>
       </div>
@@ -182,26 +179,5 @@ async function handleSavePreferences() {
         </div>
       </div>
     </div>
-
-    <!-- Login fallback if not authenticated -->
-    <div v-else class="text-center py-20 px-6 rounded-3xl bg-[#181B23] border border-white/10 space-y-4">
-      <User class="w-12 h-12 text-[#FFC69D] mx-auto" />
-      <h3 class="text-lg font-bold text-white font-['Plus_Jakarta_Sans']">Iniciá sesión para personalizar tu experiencia</h3>
-      <p class="text-xs text-gray-400 max-w-sm mx-auto">
-        Accedé con tu cuenta para guardar eventos favoritos y sincronizar tu cartelera personalizada.
-      </p>
-      <button
-        @click="isAuthModalOpen = true"
-        class="px-6 py-3 rounded-xl bg-[#FFC69D] text-[#172B46] text-xs font-bold hover:bg-[#FFDCC4] transition-all shadow-md"
-      >
-        Ingresar a mi cuenta
-      </button>
-    </div>
-
-    <!-- Auth Modal -->
-    <AuthModal
-      v-if="isAuthModalOpen"
-      @close="isAuthModalOpen = false"
-    />
   </div>
 </template>

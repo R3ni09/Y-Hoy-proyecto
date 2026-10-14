@@ -1,21 +1,19 @@
 <script setup lang="ts">
 import { ref, watch, onMounted } from 'vue';
-import { useAuthStore } from '../stores/authStore';
+import { useUserStore } from '../stores/userStore';
 import { favoritesRepository } from '../repositories/favorites.repository';
 import type { CulturalEvent } from '../types';
 import EventCard from '../components/events/EventCard.vue';
-import AuthModal from '../components/auth/AuthModal.vue';
-import { Bookmark, Compass, User, AlertCircle, RefreshCw } from 'lucide-vue-next';
+import { Bookmark, Compass, AlertCircle } from 'lucide-vue-next';
 
-const authStore = useAuthStore();
+const userStore = useUserStore();
 
 const savedEvents = ref<CulturalEvent[]>([]);
 const isLoading = ref<boolean>(true);
 const errorMessage = ref<string | null>(null);
-const isAuthModalOpen = ref<boolean>(false);
 
 async function loadFavorites() {
-  if (!authStore.isAuthenticated || !authStore.user?.uid) {
+  if (!userStore.visitorId) {
     savedEvents.value = [];
     isLoading.value = false;
     return;
@@ -24,7 +22,7 @@ async function loadFavorites() {
   isLoading.value = true;
   errorMessage.value = null;
   try {
-    savedEvents.value = await favoritesRepository.getFavoriteEvents(authStore.user.uid);
+    savedEvents.value = await favoritesRepository.getFavoriteEvents(userStore.visitorId);
   } catch (err: any) {
     errorMessage.value = err.message || 'Error al cargar los planes guardados desde Firestore.';
   } finally {
@@ -36,14 +34,10 @@ onMounted(() => {
   loadFavorites();
 });
 
-// Re-load when auth status changes or favorite IDs change
-watch(() => authStore.favorites, () => {
+// Re-load when the favorite IDs change
+watch(() => userStore.favorites, () => {
   loadFavorites();
 }, { deep: true });
-
-watch(() => authStore.isAuthenticated, () => {
-  loadFavorites();
-});
 </script>
 
 <template>
@@ -56,34 +50,17 @@ watch(() => authStore.isAuthenticated, () => {
       </div>
       <h1 class="text-3xl sm:text-4xl font-extrabold text-white font-['Plus_Jakarta_Sans'] tracking-tight flex items-center gap-3">
         <span>Guardados</span>
-        <span v-if="authStore.isAuthenticated" class="text-sm px-2.5 py-0.5 rounded-full bg-white/10 text-[#FFC69D] font-normal">
+        <span class="text-sm px-2.5 py-0.5 rounded-full bg-white/10 text-[#FFC69D] font-normal">
           {{ savedEvents.length }}
         </span>
       </h1>
       <p class="text-sm text-gray-400 mt-1">
-        Tus actividades y recitales favoritos sincronizados en tu cuenta de ¿Y hoy?.
+        Tus actividades y recitales favoritos, sincronizados en Cloud Firestore para este dispositivo.
       </p>
-    </div>
-
-    <!-- Unauthenticated State -->
-    <div v-if="!authStore.isAuthenticated && !authStore.isLoading" class="text-center py-20 px-6 rounded-3xl bg-[#181B23] border border-white/10 max-w-md mx-auto space-y-4">
-      <div class="w-14 h-14 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center mx-auto text-[#FFC69D]">
-        <User class="w-6 h-6" />
-      </div>
-      <h3 class="text-lg font-bold text-white font-['Plus_Jakarta_Sans']">Iniciá sesión para ver tus guardados</h3>
-      <p class="text-xs sm:text-sm text-gray-400">
-        Tus favoritos se sincronizan en la nube para que puedas consultarlos desde cualquier dispositivo.
-      </p>
-      <button
-        @click="isAuthModalOpen = true"
-        class="mt-2 inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-[#FFC69D] text-[#172B46] text-xs font-bold hover:bg-[#FFDCC4] transition-all"
-      >
-        <span>Iniciar sesión</span>
-      </button>
     </div>
 
     <!-- Error State -->
-    <div v-else-if="errorMessage" class="p-6 rounded-3xl bg-red-500/10 border border-red-500/20 text-center max-w-md mx-auto space-y-3">
+    <div v-if="errorMessage" class="p-6 rounded-3xl bg-red-500/10 border border-red-500/20 text-center max-w-md mx-auto space-y-3">
       <AlertCircle class="w-8 h-8 text-red-400 mx-auto" />
       <p class="text-xs sm:text-sm text-red-200">{{ errorMessage }}</p>
       <button
@@ -125,11 +102,5 @@ watch(() => authStore.isAuthenticated, () => {
         <span>Descubrir planes ahora</span>
       </router-link>
     </div>
-
-    <!-- Auth Modal -->
-    <AuthModal
-      v-if="isAuthModalOpen"
-      @close="isAuthModalOpen = false"
-    />
   </div>
 </template>

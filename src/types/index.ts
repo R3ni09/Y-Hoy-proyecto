@@ -1,7 +1,6 @@
 export type PriceType = 'free' | 'paid' | 'voluntary';
 export type VerificationStatus = 'verified' | 'pending' | 'unverified';
 export type PublicationStatus = 'draft' | 'pending_review' | 'published' | 'rejected' | 'cancelled';
-export type UserRole = 'user' | 'organizer' | 'moderator' | 'admin';
 export type VisibilityType = 'public' | 'unlisted' | 'private';
 
 export interface UserPreferences {
@@ -10,16 +9,16 @@ export interface UserPreferences {
   theme?: 'dark' | 'light' | 'system';
 }
 
+/**
+ * Local visitor profile (no Firebase Auth): `uid` is the visitorId generated
+ * in the browser and kept in localStorage. There are no roles or emails.
+ */
 export interface UserProfile {
   uid: string;
-  email: string;
   displayName: string;
-  photoURL?: string;
   preferredCityId: string;
   preferredCategoryIds: string[];
   preferences?: UserPreferences;
-  status?: 'active' | 'suspended' | 'pending';
-  role: UserRole;
   createdAt: string;
   updatedAt: string;
 }

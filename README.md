@@ -25,24 +25,28 @@
 
 La estructura está documentada en `firebase-blueprint.json`, `firestore.rules` y `firestore.indexes.json`.
 
+> **Servicios Firebase en uso:** el proyecto funciona únicamente con **Hosting** y **Cloud Firestore** (compatible con el plan gratuito Spark). **Firebase Authentication y Firebase Storage fueron eliminados**: la identidad es de *visitante local* (ID aleatorio en `localStorage`) y las imágenes se cargan por URL.
+
 ### Colecciones Principales
 - **`cities`**: Catálogo de ciudades activas (`corrientes`, `resistencia`), coordenadas y estado.
 - **`categories`**: Taxonomía cultural (`musica`, `teatro`, `aire-libre`, `ferias`, `gastronomia`, `artes-visuales`, `talleres`).
-- **`organizers`**: Perfiles de creadores, bandas, centros culturales y teatros con `ownerIds` array para control de permisos.
+- **`organizers`**: Perfiles de creadores, bandas, centros culturales y teatros.
 - **`events`**: Colección principal con control estricto de `publicationStatus` (`draft`, `pending_review`, `published`, `rejected`).
-- **`users/{userId}`**: Perfil y preferencias privadas del usuario.
-  - **`users/{userId}/favorites/{eventId}`**: Subcolección de favoritos individuales para consultas $O(1)$ sin límite de crecimiento de documentos.
+- **`users/{visitorId}`**: Perfil y preferencias del visitante (sin cuentas: el `visitorId` se genera localmente y se guarda en `localStorage`).
+  - **`users/{visitorId}/favorites/{eventId}`**: Subcolección de favoritos para consultas $O(1)$ sin límite de crecimiento de documentos.
 
 ### Estrategia de Desnormalización
 - En cada evento se copian datos clave de lectura frecuente (`cityName`, `categoryName`, `categoryEmoji`, `organizerName`, `venueName`).
-- **Fuente de verdad:** La actualización de un nombre de organizador o categoría se propaga mediante Cloud Functions asíncronas para mantener la consistencia sin penalizar el rendimiento de las lecturas públicas.
+- **Consistencia:** al no usar Cloud Functions, la actualización de nombres de organizadores o categorías se propaga mediante el script de seed (`scripts/seed.ts`) o desde la consola de Firebase.
 
 ---
 
 ## 3. Seguridad y Reglas de Firestore (`firestore.rules`)
 - **Default-Deny Catch-All:** Todo acceso no contemplado está cerrado por defecto.
-- **Validación de publicación:** Los usuarios regulares solo pueden crear eventos en estado `draft` o `pending_review`. Solo usuarios autorizados o administradores pueden cambiar el estado a `published`.
-- **Aislamiento de favoritos:** Cada usuario únicamente puede leer o modificar su propia subcolección de favoritos (`users/{userId}/favorites`).
+- **Sin Firebase Auth:** no existe `request.auth`; la "propiedad" de un perfil/favoritos se basa en la posesión del `visitorId` aleatorio (imposible de adivinar, generado con `crypto.randomUUID`). Es seguridad de nivel demo, adecuada para un hackathon.
+- **Taxonomías públicas de solo lectura:** `cities`, `categories`, `venues` y `organizers` solo se alimentan con el seed (Admin SDK) o la consola.
+- **Flujo de publicación controlado:** la web siempre crea eventos comunitarios en `pending_review` con verificación `pending`; las reglas impiden que se auto-publiquen o auto-verifiquen.
+- **Curaduría con clave simple:** el panel de moderación se desbloquea con `VITE_ADMIN_KEY` (barrera de demostración: la clave viaja en el JS del cliente).
 
 ---
 
@@ -64,10 +68,12 @@ src/
 ├── repositories/
 │   └── eventsRepository.ts   # Abstracción de datos (Firestore + Demo cache)
 ├── services/
-│   └── firebase/
-│       └── config.ts         # Inicialización SDK y manejo de errores FirestoreErrorInfo
+│   ├── firebase/
+│   │   └── config.ts         # Inicialización SDK (solo Firestore) y manejo de errores
+│   └── visitor/
+│       └── visitor.ts        # Identidad de visitante local + desbloqueo de curaduría
 ├── stores/
-│   ├── authStore.ts          # Estado de usuario, roles (User/Org/Admin) y favoritos
+│   ├── userStore.ts          # Perfil de visitante, favoritos y modo curador (sin Firebase Auth)
 │   ├── cityStore.ts          # Contexto territorial seleccionado
 │   └── eventsStore.ts        # Filtros reactivos, listados y moderación
 ├── types/
@@ -76,13 +82,13 @@ src/
 │   ├── HomeView.vue          # Homepage limpia, hero, buscador y planes
 │   ├── ExploreView.vue       # Cartelera con filtros progresivos
 │   ├── EventDetailView.vue   # Ficha completa, entradas y mapa
-│   ├── PublishEventView.vue  # Formulario por pasos para la comunidad
+│   ├── PublishEventView.vue  # Formulario por pasos (imagen por URL) para la comunidad
 │   ├── FavoritesView.vue     # Listado de eventos guardados
-│   ├── ModerationView.vue    # Panel de aprobación para curadores
-│   └── ProfileView.vue       # Preferencias del usuario
+│   ├── ModerationView.vue    # Panel de curaduría protegido por clave simple
+│   └── ProfileView.vue       # Preferencias del visitante
 ├── App.vue                   # Marco general y luces ambientales
-├── main.ts                   # Montaje Vue + Pinia + Router
-└── index.css                 # Tailwind CSS v4 y tokens de diseño
+├── main.ts                    # Montaje Vue + Pinia + Router
+└── index.css                  # Tailwind CSS v4 y tokens de diseño
 ```
 
 ---
@@ -101,4 +107,40 @@ npm run build
 
 # Validar tipos TypeScript
 npm run lint
+```
+
+### Variables de entorno (`.env`)
+
+```env
+# Solo Hosting + Firestore: no se necesitan claves de Auth ni Storage
+VITE_FIREBASE_API_KEY="..."
+VITE_FIREBASE_PROJECT_ID="..."
+VITE_FIREBASE_APP_ID="..."
+
+# Clave del panel de moderación (demo, no seguridad real)
+VITE_ADMIN_KEY="..."
+
+# Seed con Admin SDK (requiere clave de cuenta de servicio)
+GOOGLE_APPLICATION_CREDENTIALS="./serviceAccount.json"
+```
+
+### Poblar la base de datos (seed)
+
+El seed usa el **Admin SDK** (el cliente web ya no puede escribir taxonomías ni eventos
+publicados con las reglas estrictas y sin Firebase Auth):
+
+1. Consola de Firebase → Configuración del proyecto → Cuentas de servicio
+   → *Generar nueva clave privada* → guardar como `serviceAccount.json`.
+2. En `.env`: `GOOGLE_APPLICATION_CREDENTIALS=./serviceAccount.json`
+3. Ejecutar:
+
+```bash
+npm run seed
+```
+
+### Despliegue (Hosting + Firestore)
+
+```bash
+npm run build
+npx firebase deploy --only hosting,firestore
 ```

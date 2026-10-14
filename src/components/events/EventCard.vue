@@ -2,7 +2,7 @@
 import { computed } from 'vue';
 import { useRouter } from 'vue-router';
 import type { CulturalEvent } from '../../types';
-import { useAuthStore } from '../../stores/authStore';
+import { useUserStore } from '../../stores/userStore';
 import { MapPin, Bookmark, Calendar, ArrowUpRight } from 'lucide-vue-next';
 
 const props = defineProps<{
@@ -11,18 +11,14 @@ const props = defineProps<{
 }>();
 
 const router = useRouter();
-const authStore = useAuthStore();
+const userStore = useUserStore();
 
-const isSaved = computed(() => authStore.isFavorite(props.event.id));
+const isSaved = computed(() => userStore.isFavorite(props.event.id));
 
 async function handleToggleFavorite(e: MouseEvent) {
   e.stopPropagation();
-  if (!authStore.isAuthenticated) {
-    alert('Iniciá sesión para guardar este evento en tus favoritos.');
-    return;
-  }
   try {
-    await authStore.toggleFavorite(props.event.id);
+    await userStore.toggleFavorite(props.event.id);
   } catch (err: any) {
     console.warn('Could not toggle favorite:', err.message);
   }

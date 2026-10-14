@@ -23,19 +23,19 @@ export class UsersRepository {
     }
   }
 
-  async createUserProfile(profile: Partial<UserProfile> & { uid: string; email: string }): Promise<UserProfile> {
+  /**
+   * Creates (or merges) the local visitor profile in Firestore.
+   * No Firebase Auth: `uid` is the locally generated visitorId.
+   */
+  async createUserProfile(profile: Partial<UserProfile> & { uid: string }): Promise<UserProfile> {
     if (!isFirebaseConfigured || !db) throw new Error('Firestore no está conectado');
 
     const now = new Date().toISOString();
     const fullProfile: UserProfile = {
       uid: profile.uid,
-      email: profile.email,
-      displayName: profile.displayName || 'Usuario Cultural',
-      photoURL: profile.photoURL || undefined,
+      displayName: profile.displayName || 'Visitante Cultural',
       preferredCityId: profile.preferredCityId || 'corrientes',
       preferredCategoryIds: profile.preferredCategoryIds || ['musica', 'aire-libre'],
-      role: profile.role || (profile.email === 'renatavillalba24@gmail.com' ? 'admin' : 'user'),
-      status: 'active',
       preferences: profile.preferences || {
         notifyNewEvents: true,
         receiveNewsletter: false,
@@ -62,7 +62,7 @@ export class UsersRepository {
     if (!isFirebaseConfigured || !db || !uid) throw new Error('Firestore no está conectado');
 
     try {
-      const { uid: _, role: __, createdAt: ___, ...allowedUpdates } = updates;
+      const { uid: _, createdAt: __, ...allowedUpdates } = updates;
       await updateDoc(doc(db, this.collectionName, uid), {
         ...allowedUpdates,
         updatedAt: Timestamp.now(),

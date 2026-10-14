@@ -2,7 +2,7 @@
 import { ref, computed, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useEventsStore } from '../stores/eventsStore';
-import { useAuthStore } from '../stores/authStore';
+import { useUserStore } from '../stores/userStore';
 import type { CulturalEvent } from '../types';
 import {
   Calendar,
@@ -20,14 +20,14 @@ import {
 const route = useRoute();
 const router = useRouter();
 const eventsStore = useEventsStore();
-const authStore = useAuthStore();
+const userStore = useUserStore();
 
 const event = ref<CulturalEvent | null>(null);
 const isLoading = ref(true);
 const errorMessage = ref<string | null>(null);
 const copied = ref(false);
 
-const isSaved = computed(() => (event.value ? authStore.isFavorite(event.value.id) : false));
+const isSaved = computed(() => (event.value ? userStore.isFavorite(event.value.id) : false));
 
 onMounted(async () => {
   const eventId = route.params.id as string;
@@ -58,13 +58,9 @@ function handleShare() {
 }
 
 async function handleToggleFavorite() {
-  if (!authStore.isAuthenticated) {
-    alert('Iniciá sesión para guardar este evento en tus favoritos.');
-    return;
-  }
   if (!event.value) return;
   try {
-    await authStore.toggleFavorite(event.value.id);
+    await userStore.toggleFavorite(event.value.id);
   } catch (err) {
     console.error('Error toggling favorite:', err);
   }

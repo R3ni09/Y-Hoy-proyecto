@@ -2,19 +2,17 @@
   "entities": {
     "UserProfile": {
       "title": "UserProfile",
-      "description": "User account information and local preferences",
+      "description": "Local visitor profile and preferences. No Firebase Auth: uid is a random visitorId kept in the browser (localStorage); there are no emails, photos or roles.",
       "type": "object",
       "properties": {
         "uid": { "type": "string" },
-        "email": { "type": "string", "format": "email" },
         "displayName": { "type": "string", "maxLength": 100 },
-        "photoURL": { "type": "string" },
         "preferredCityId": { "type": "string" },
-        "role": { "type": "string", "enum": ["user", "organizer", "moderator", "admin"] },
+        "preferredCategoryIds": { "type": "array", "items": { "type": "string" } },
         "createdAt": { "type": "string" },
         "updatedAt": { "type": "string" }
       },
-      "required": ["uid", "email", "displayName", "role"]
+      "required": ["uid", "displayName"]
     },
     "City": {
       "title": "City",
@@ -98,7 +96,7 @@
   "firestore": {
     "/users/{userId}": {
       "schema": "UserProfile",
-      "description": "User profile with preference settings and roles"
+      "description": "Local visitor profile with preference settings (no Firebase Auth)"
     },
     "/cities/{cityId}": {
       "schema": "City",

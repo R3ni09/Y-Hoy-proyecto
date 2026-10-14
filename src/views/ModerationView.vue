@@ -1,40 +1,59 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
 import { useEventsStore } from '../stores/eventsStore';
-import { useAuthStore } from '../stores/authStore';
-import AuthModal from '../components/auth/AuthModal.vue';
+import { useUserStore } from '../stores/userStore';
 import {
   ShieldCheck,
   Check,
   X,
-  AlertTriangle,
   Calendar,
   MapPin,
-  RefreshCw,
-  Lock
+  Lock,
+  KeyRound
 } from 'lucide-vue-next';
 
 const eventsStore = useEventsStore();
-const authStore = useAuthStore();
+const userStore = useUserStore();
 
 const rejectionReason = ref('');
 const rejectingEventId = ref<string | null>(null);
 const isProcessing = ref(false);
 const actionMessage = ref<string | null>(null);
-const isAuthModalOpen = ref(false);
+
+// Passcode gate (demo-grade): replaces the old Firebase Auth admin check.
+const adminKey = ref('');
+const unlockError = ref<string | null>(null);
+const isUnlocking = ref(false);
+
+async function handleUnlock() {
+  unlockError.value = null;
+  isUnlocking.value = true;
+  try {
+    const ok = userStore.unlockCuration(adminKey.value);
+    if (ok) {
+      adminKey.value = '';
+      await eventsStore.fetchPendingEvents();
+    } else {
+      unlockError.value = 'Clave incorrecta. Volvé a intentarlo.';
+    }
+  } catch (err: any) {
+    unlockError.value = err.message || 'No se pudo desbloquear el modo curador.';
+  } finally {
+    isUnlocking.value = false;
+  }
+}
 
 onMounted(async () => {
-  if (authStore.isAdmin) {
+  if (userStore.isCurator) {
     await eventsStore.fetchPendingEvents();
   }
 });
 
 async function handleApprove(id: string) {
-  if (!authStore.user?.uid) return;
   isProcessing.value = true;
   actionMessage.value = null;
   try {
-    await eventsStore.approveEvent(id, authStore.user.uid);
+    await eventsStore.approveEvent(id, userStore.visitorId);
     actionMessage.value = 'Evento aprobado y publicado en cartelera.';
     setTimeout(() => { actionMessage.value = null; }, 3000);
   } catch (err: any) {
@@ -45,11 +64,11 @@ async function handleApprove(id: string) {
 }
 
 async function handleReject(id: string) {
-  if (!rejectionReason.value.trim() || !authStore.user?.uid) return;
+  if (!rejectionReason.value.trim()) return;
   isProcessing.value = true;
   actionMessage.value = null;
   try {
-    await eventsStore.rejectEvent(id, rejectionReason.value, authStore.user.uid);
+    await eventsStore.rejectEvent(id, rejectionReason.value, userStore.visitorId);
     rejectingEventId.value = null;
     rejectionReason.value = '';
     actionMessage.value = 'Evento rechazado correctamente.';
@@ -80,12 +99,12 @@ async function handleReject(id: string) {
       </div>
 
       <div class="flex items-center gap-2">
-        <span class="text-xs text-gray-400">Rol activo:</span>
+        <span class="text-xs text-gray-400">Modo:</span>
         <span
           class="px-3 py-1.5 rounded-xl text-xs font-bold uppercase tracking-wider"
-          :class="authStore.isAdmin ? 'bg-[#91E3C7] text-[#00382B]' : 'bg-white/10 text-gray-300'"
+          :class="userStore.isCurator ? 'bg-[#91E3C7] text-[#00382B]' : 'bg-white/10 text-gray-300'"
         >
-          {{ authStore.userRole }}
+          {{ userStore.isCurator ? 'Curador' : 'Visitante' }}
         </span>
       </div>
     </div>
@@ -99,27 +118,36 @@ async function handleReject(id: string) {
       <button @click="actionMessage = null" class="text-white hover:underline">Cerrar</button>
     </div>
 
-    <!-- Permission Warning if not Admin -->
-    <div v-if="!authStore.isAdmin" class="p-8 sm:p-12 rounded-3xl bg-[#181B23] border border-white/10 text-center space-y-4 max-w-lg mx-auto shadow-2xl">
-      <div class="w-14 h-14 rounded-2xl bg-red-500/10 border border-red-500/30 flex items-center justify-center mx-auto text-red-400">
+    <!-- Passcode gate (replaces the old Firebase Auth admin check) -->
+    <div v-if="!userStore.isCurator" class="p-8 sm:p-12 rounded-3xl bg-[#181B23] border border-white/10 text-center space-y-4 max-w-lg mx-auto shadow-2xl">
+      <div class="w-14 h-14 rounded-2xl bg-[#006751]/30 border border-[#91E3C7]/40 flex items-center justify-center mx-auto text-[#91E3C7]">
         <Lock class="w-6 h-6" />
       </div>
       <h3 class="text-xl font-bold text-white font-['Plus_Jakarta_Sans']">Acceso restringido</h3>
       <p class="text-xs sm:text-sm text-gray-400 leading-relaxed">
-        El panel curatorial está reservado para moderadores y administradores autorizados. Para gestionar publicaciones, iniciá sesión con una cuenta con permisos administrativos en Firebase.
+        El panel curatorial se desbloquea con la clave de curaduría configurada en el archivo <code class="text-[#91E3C7]">.env</code> (VITE_ADMIN_KEY).
+        Sin Firebase Auth, esta clave es solo una barrera de demostración, no seguridad real.
       </p>
-      <div class="pt-2">
+      <form @submit.prevent="handleUnlock" class="flex flex-col sm:flex-row gap-2 max-w-sm mx-auto">
+        <div class="flex-1 flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl bg-white/5 border border-white/10 focus-within:border-[#91E3C7]/50 transition-colors text-left">
+          <KeyRound class="w-4 h-4 text-gray-400 shrink-0" />
+          <input
+            v-model="adminKey"
+            type="password"
+            required
+            placeholder="Clave de curador"
+            class="w-full bg-transparent text-sm text-white placeholder:text-gray-400 focus:outline-none"
+          />
+        </div>
         <button
-          v-if="!authStore.isAuthenticated"
-          @click="isAuthModalOpen = true"
-          class="px-6 py-2.5 rounded-xl bg-[#FFC69D] text-[#172B46] text-xs font-bold hover:bg-[#FFDCC4] transition-all"
+          type="submit"
+          :disabled="isUnlocking"
+          class="px-5 py-2.5 rounded-xl bg-[#91E3C7] text-[#00382B] text-xs font-bold hover:bg-[#A9EBD6] transition-all disabled:opacity-50 shrink-0"
         >
-          Iniciar sesión
+          {{ isUnlocking ? 'Verificando...' : 'Desbloquear' }}
         </button>
-        <span v-else class="text-xs text-gray-400 block">
-          Tu cuenta actual ({{ authStore.user?.email }}) no tiene permisos administrativos.
-        </span>
-      </div>
+      </form>
+      <p v-if="unlockError" class="text-xs text-red-300">{{ unlockError }}</p>
     </div>
 
     <!-- Moderation List from Firestore -->
@@ -221,11 +249,5 @@ async function handleReject(id: string) {
         No hay propuestas pendientes de revisión en Cloud Firestore. Todos los eventos subidos por la comunidad han sido procesados.
       </p>
     </div>
-
-    <!-- Auth Modal -->
-    <AuthModal
-      v-if="isAuthModalOpen"
-      @close="isAuthModalOpen = false"
-    />
   </div>
 </template>
