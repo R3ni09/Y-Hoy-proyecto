@@ -1,0 +1,124 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User account information and local preferences",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "displayName": { "type": "string", "maxLength": 100 },
+        "photoURL": { "type": "string" },
+        "preferredCityId": { "type": "string" },
+        "role": { "type": "string", "enum": ["user", "organizer", "moderator", "admin"] },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["uid", "email", "displayName", "role"]
+    },
+    "City": {
+      "title": "City",
+      "description": "Metropolitan area or city where events take place",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "maxLength": 100 },
+        "province": { "type": "string", "maxLength": 100 },
+        "country": { "type": "string" },
+        "slug": { "type": "string" },
+        "isActive": { "type": "boolean" }
+      },
+      "required": ["name", "province", "country", "slug"]
+    },
+    "Category": {
+      "title": "Category",
+      "description": "Cultural classification taxonomy",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "maxLength": 80 },
+        "slug": { "type": "string" },
+        "emoji": { "type": "string" },
+        "color": { "type": "string" },
+        "displayOrder": { "type": "number" }
+      },
+      "required": ["name", "slug"]
+    },
+    "Organizer": {
+      "title": "Organizer",
+      "description": "Cultural producer, artist collective, venue or municipality profile",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "maxLength": 120 },
+        "slug": { "type": "string" },
+        "description": { "type": "string", "maxLength": 1500 },
+        "category": { "type": "string", "enum": ["artist", "venue", "collective", "institution"] },
+        "cityId": { "type": "string" },
+        "verificationStatus": { "type": "string", "enum": ["verified", "pending", "unverified"] },
+        "ownerIds": { "type": "array" }
+      },
+      "required": ["name", "slug", "cityId", "verificationStatus"]
+    },
+    "CulturalEvent": {
+      "title": "CulturalEvent",
+      "description": "Live cultural event, festival, concert or workshop",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "maxLength": 120 },
+        "slug": { "type": "string" },
+        "summary": { "type": "string", "maxLength": 300 },
+        "description": { "type": "string", "maxLength": 5000 },
+        "categoryId": { "type": "string" },
+        "categoryName": { "type": "string" },
+        "organizerId": { "type": "string" },
+        "organizerName": { "type": "string" },
+        "cityId": { "type": "string" },
+        "venueName": { "type": "string" },
+        "address": { "type": "string", "maxLength": 200 },
+        "startAt": { "type": "string" },
+        "priceType": { "type": "string", "enum": ["free", "paid", "voluntary"] },
+        "priceDisplay": { "type": "string" },
+        "imageURL": { "type": "string" },
+        "publicationStatus": { "type": "string", "enum": ["draft", "pending_review", "published", "rejected", "cancelled"] },
+        "verificationStatus": { "type": "string", "enum": ["verified", "pending", "unverified"] },
+        "sourceType": { "type": "string", "enum": ["community", "official", "organizer", "external_import"] }
+      },
+      "required": ["title", "slug", "categoryId", "cityId", "startAt", "publicationStatus"]
+    },
+    "Favorite": {
+      "title": "Favorite",
+      "description": "User bookmarked event",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "eventId": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["userId", "eventId"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profile with preference settings and roles"
+    },
+    "/cities/{cityId}": {
+      "schema": "City",
+      "description": "Available urban regions for event filtering"
+    },
+    "/categories/{categoryId}": {
+      "schema": "Category",
+      "description": "Event categories list"
+    },
+    "/organizers/{organizerId}": {
+      "schema": "Organizer",
+      "description": "Registered cultural organizers and artist profiles"
+    },
+    "/events/{eventId}": {
+      "schema": "CulturalEvent",
+      "description": "Main published and draft events catalog"
+    },
+    "/users/{userId}/favorites/{eventId}": {
+      "schema": "Favorite",
+      "description": "Subcollection of saved events for a specific user"
+    }
+  }
+}

@@ -1,0 +1,126 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 1. Default-deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        (request.auth.token.email != null && request.auth.token.email == "renatavillalba24@gmail.com")
+      );
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Public Taxonomies
+    match /cities/{cityId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /categories/{categoryId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /venues/{venueId} {
+      allow read: if true;
+      allow create: if isSignedIn();
+      allow update, delete: if isAdmin();
+    }
+
+    // User profiles & private subcollections
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId) && incoming().uid == userId;
+      allow update: if isOwner(userId) && incoming().uid == existing().uid && !incoming().diff(existing()).affectedKeys().hasAny(['role']);
+      allow delete: if isAdmin();
+
+      // Subcollection of saved events for each user
+      match /favorites/{eventId} {
+        allow read, write: if isOwner(userId) || isAdmin();
+      }
+    }
+
+    // Organizers profiles
+    match /organizers/{organizerId} {
+      allow read: if true;
+      allow create: if isSignedIn() && incoming().ownerIds.hasAny([request.auth.uid]);
+      allow update: if isAdmin() || (isSignedIn() && existing().ownerIds.hasAny([request.auth.uid]) && incoming().ownerIds == existing().ownerIds);
+      allow delete: if isAdmin();
+    }
+
+    // Organizer Memberships
+    match /organizerMemberships/{membershipId} {
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow write: if isAdmin();
+    }
+
+    // Main Events Catalog
+    match /events/{eventId} {
+      // Public can only read published events; author, organizer owners and admins can read drafts / pending
+      allow read: if (resource.data.publicationStatus == 'published') ||
+                     (isSignedIn() && resource.data.authorUid == request.auth.uid) ||
+                     (isSignedIn() && resource.data.organizerId != null && exists(/databases/$(database)/documents/organizers/$(resource.data.organizerId)) && get(/databases/$(database)/documents/organizers/$(resource.data.organizerId)).data.ownerIds.hasAny([request.auth.uid])) ||
+                     isAdmin();
+
+      // Creating an event: must be signed in, must start as draft or pending_review (never self-publish without admin role)
+      allow create: if isSignedIn() && (
+        incoming().publicationStatus in ['draft', 'pending_review'] || isAdmin()
+      );
+
+      // Updating an event: author or organizer can edit content; ONLY admin can change publicationStatus to published/rejected
+      allow update: if isAdmin() || (
+        isSignedIn() &&
+        (
+          existing().authorUid == request.auth.uid ||
+          (existing().organizerId != null && exists(/databases/$(database)/documents/organizers/$(existing().organizerId)) && get(/databases/$(database)/documents/organizers/$(existing().organizerId)).data.ownerIds.hasAny([request.auth.uid]))
+        ) &&
+        !incoming().diff(existing()).affectedKeys().hasAny(['publicationStatus', 'verificationStatus'])
+      );
+
+      allow delete: if isAdmin();
+    }
+
+    // Moderation Queue & Audit records
+    match /moderationQueue/{itemId} {
+      allow read, write: if isAdmin();
+    }
+
+    // User Event Reports
+    match /eventReports/{reportId} {
+      allow create: if isSignedIn();
+      allow read, update, delete: if isAdmin();
+    }
+
+    // Event Metrics
+    match /eventMetrics/{eventId} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+
+    // Admin whitelist
+    match /admins/{adminId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+  }
+}

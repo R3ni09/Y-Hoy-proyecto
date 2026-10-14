@@ -1,0 +1,6 @@
+{
+  "name": "¿Y hoy? — Descubrimiento Cultural Litoral",
+  "description": "Plataforma de descubrimiento de eventos, recitales, ferias y experiencias culturales en Corrientes y Chaco.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
